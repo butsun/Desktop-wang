@@ -1,0 +1,11 @@
+.venv/
+__pycache__/
+*.py[cod]
+.DS_Store
+build/
+dist/
+*.spec.bak
+*.log
+cookie.txt
+settings.json
+stocks.json

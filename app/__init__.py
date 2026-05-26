@@ -1,0 +1,1 @@
+"""StockFloat application package."""
