@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import replace
 import webbrowser
 
-from PySide6.QtCore import QEasingCurve, QPoint, QPropertyAnimation, QThread, QTimer, Qt, Signal
-from PySide6.QtGui import QColor
+from PySide6.QtCore import QEasingCurve, QPoint, QRect, QPropertyAnimation, QThread, QTimer, Qt, Signal
+from PySide6.QtGui import QColor, QCursor
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -59,6 +59,10 @@ class ConnectionCheckWorker(QThread):
 
 
 class FloatingWindow(QWidget):
+    RESIZE_MARGIN = 16
+    MIN_EXPANDED_WIDTH = 380
+    MIN_EXPANDED_HEIGHT = 220
+
     def __init__(self, config: ConfigManager, market_data: MarketDataService) -> None:
         super().__init__()
         self._config = config
@@ -68,6 +72,8 @@ class FloatingWindow(QWidget):
         if saved_cookie:
             self._market_data.set_cookie(saved_cookie)
         self._drag_offset: QPoint | None = None
+        self._resize_origin: QPoint | None = None
+        self._resize_start_geometry: QRect | None = None
         self._worker: QuoteWorker | None = None
         self._expanded = False
         self._settings_dialog: SettingsDialog | None = None
@@ -131,18 +137,36 @@ class FloatingWindow(QWidget):
         super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
+        if event.button() == Qt.LeftButton and self._can_resize_at(event.position().toPoint()):
+            self._resize_origin = event.globalPosition().toPoint()
+            self._resize_start_geometry = self.geometry()
+            event.accept()
+            return
         if event.button() == Qt.LeftButton:
             self._drag_offset = event.globalPosition().toPoint() - self.frameGeometry().topLeft()
             event.accept()
 
     def mouseMoveEvent(self, event) -> None:  # type: ignore[override]
+        if self._resize_origin is not None and self._resize_start_geometry is not None:
+            delta = event.globalPosition().toPoint() - self._resize_origin
+            geometry = QRect(self._resize_start_geometry)
+            geometry.setWidth(max(self.MIN_EXPANDED_WIDTH, geometry.width() + delta.x()))
+            geometry.setHeight(max(self.MIN_EXPANDED_HEIGHT, geometry.height() + delta.y()))
+            self.setGeometry(geometry)
+            event.accept()
+            return
         if self._drag_offset is not None and event.buttons() & Qt.LeftButton:
             self.move(event.globalPosition().toPoint() - self._drag_offset)
             event.accept()
+            return
+        self._update_resize_cursor(event.position().toPoint())
 
     def mouseReleaseEvent(self, event) -> None:  # type: ignore[override]
+        self._resize_origin = None
+        self._resize_start_geometry = None
         self._drag_offset = None
         self._save_window_geometry()
+        self._update_resize_cursor(event.position().toPoint())
         event.accept()
 
     def keyPressEvent(self, event) -> None:  # type: ignore[override]
@@ -150,6 +174,11 @@ class FloatingWindow(QWidget):
             self.hide()
             return
         super().keyPressEvent(event)
+
+    def closeEvent(self, event) -> None:  # type: ignore[override]
+        if self._worker is not None and self._worker.isRunning():
+            self._worker.wait(1500)
+        super().closeEvent(event)
 
     def _setup_window(self) -> None:
         self._apply_window_flags()
@@ -248,6 +277,10 @@ class FloatingWindow(QWidget):
         slider.setFixedWidth(110)
         slider.valueChanged.connect(self._change_opacity)
         footer.addWidget(slider)
+        resize_hint = QLabel("◢")
+        resize_hint.setObjectName("resizeHint")
+        resize_hint.setToolTip("拖拽调整看板大小")
+        footer.addWidget(resize_hint)
         panel_layout.addLayout(footer)
 
     def _apply_mode(self, expanded: bool, animated: bool) -> None:
@@ -295,6 +328,15 @@ class FloatingWindow(QWidget):
 
     def _clear_worker(self) -> None:
         self._worker = None
+
+    def _can_resize_at(self, position: QPoint) -> bool:
+        return self._expanded and position.x() >= self.width() - self.RESIZE_MARGIN and position.y() >= self.height() - self.RESIZE_MARGIN
+
+    def _update_resize_cursor(self, position: QPoint) -> None:
+        if self._resize_origin is not None or self._can_resize_at(position):
+            self.setCursor(QCursor(Qt.SizeFDiagCursor))
+        else:
+            self.unsetCursor()
 
     def _settings_closed(self) -> None:
         self._settings_dialog = None
@@ -647,6 +689,11 @@ def _stylesheet() -> str:
     #quoteRow {
         background-color: rgba(255, 255, 255, 18);
         border-radius: 6px;
+    }
+    #resizeHint {
+        color: #687386;
+        font-size: 14px;
+        padding-left: 4px;
     }
     QToolButton, QPushButton {
         background-color: rgba(255, 255, 255, 20);
