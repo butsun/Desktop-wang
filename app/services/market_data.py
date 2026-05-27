@@ -28,6 +28,13 @@ class StockQuote:
 
 
 @dataclass(frozen=True)
+class StockSearchResult:
+    code: str
+    name: str
+    market: str
+
+
+@dataclass(frozen=True)
 class QuoteResult:
     quotes: list[StockQuote]
     updated_at: datetime
@@ -52,6 +59,39 @@ class MarketDataService:
             return False, str(exc)
         found = sum(1 for quote in quotes if quote.price is not None)
         return True, f"接口可用，返回 {found}/{len(quotes)} 条行情"
+
+    def search_stocks(self, keyword: str) -> list[StockSearchResult]:
+        keyword = keyword.strip()
+        if not keyword:
+            return []
+        response = requests.get(
+            "https://searchapi.eastmoney.com/api/suggest/get",
+            params={"input": keyword, "type": "14"},
+            headers={
+                "User-Agent": "Mozilla/5.0",
+                "Referer": "https://quote.eastmoney.com/",
+            },
+            timeout=8,
+        )
+        response.raise_for_status()
+        rows = response.json().get("QuotationCodeTable", {}).get("Data") or []
+        results: list[StockSearchResult] = []
+        seen: set[str] = set()
+        for row in rows:
+            if row.get("Classify") != "AStock":
+                continue
+            code = str(row.get("Code", "")).strip().zfill(6)
+            if not code or code in seen:
+                continue
+            seen.add(code)
+            results.append(
+                StockSearchResult(
+                    code=code,
+                    name=_as_text(row.get("Name"), fallback=code),
+                    market=_as_text(row.get("SecurityTypeName"), fallback="A股"),
+                )
+            )
+        return results[:20]
 
     def fetch_quotes(self, symbols: list[str]) -> QuoteResult:
         normalized_symbols = [symbol.zfill(6) for symbol in symbols]

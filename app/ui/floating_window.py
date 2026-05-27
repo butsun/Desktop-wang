@@ -28,7 +28,7 @@ from PySide6.QtWidgets import (
 )
 
 from app.config.config_manager import AppSettings, ConfigManager, WindowSettings
-from app.services.market_data import MarketDataService, QuoteResult, StockQuote
+from app.services.market_data import MarketDataService, QuoteResult, StockQuote, StockSearchResult
 
 
 class QuoteWorker(QThread):
@@ -58,6 +58,21 @@ class ConnectionCheckWorker(QThread):
         self.finished.emit((ok, message))
 
 
+class StockSearchWorker(QThread):
+    finished = Signal(object)
+
+    def __init__(self, keyword: str) -> None:
+        super().__init__()
+        self._keyword = keyword
+
+    def run(self) -> None:
+        try:
+            results = MarketDataService().search_stocks(self._keyword)
+            self.finished.emit((results, None))
+        except Exception as exc:  # noqa: BLE001
+            self.finished.emit(([], str(exc)))
+
+
 class FloatingWindow(QWidget):
     RESIZE_MARGIN = 16
     MIN_EXPANDED_WIDTH = 380
@@ -77,6 +92,7 @@ class FloatingWindow(QWidget):
         self._worker: QuoteWorker | None = None
         self._expanded = False
         self._settings_dialog: SettingsDialog | None = None
+        self._search_dialog: StockSearchDialog | None = None
         self._last_result: QuoteResult | None = None
 
         self._rows_layout = QVBoxLayout()
@@ -126,6 +142,29 @@ class FloatingWindow(QWidget):
         dialog.settings_saved.connect(self._apply_settings)
         dialog.finished.connect(self._settings_closed)
         dialog.show()
+
+    def open_search(self) -> None:
+        self._apply_mode(expanded=True, animated=True)
+        if self._search_dialog is not None:
+            self._search_dialog.raise_()
+            self._search_dialog.activateWindow()
+            return
+        dialog = StockSearchDialog(self)
+        self._search_dialog = dialog
+        dialog.stock_selected.connect(self.add_stock)
+        dialog.finished.connect(self._search_closed)
+        dialog.show()
+
+    def add_stock(self, code: str) -> None:
+        normalized = code.strip().zfill(6)
+        if not normalized:
+            return
+        stocks = self._config.load_stocks()
+        if normalized not in stocks:
+            stocks.append(normalized)
+            self._config.save_stocks(stocks)
+        self._status_label.setText(f"已加入自选: {normalized}")
+        self.refresh_quotes()
 
     def enterEvent(self, event) -> None:  # type: ignore[override]
         self._collapse_timer.stop()
@@ -242,6 +281,7 @@ class FloatingWindow(QWidget):
         header.addWidget(title)
         header.addStretch(1)
         header.addWidget(self._time_label)
+        header.addWidget(_tool_button("搜索添加自选", "🔎", self.open_search))
         header.addWidget(_tool_button("刷新", "R", self.refresh_quotes))
         self._pin_button = _tool_button("钉在顶层", "", self._toggle_always_on_top)
         self._pin_button.setCheckable(True)
@@ -307,7 +347,7 @@ class FloatingWindow(QWidget):
             self.setGeometry(target)
 
     def _collapse_if_allowed(self) -> None:
-        if self._settings_dialog is not None or self.underMouse():
+        if self._settings_dialog is not None or self._search_dialog is not None or self.underMouse():
             return
         self._apply_mode(expanded=False, animated=True)
 
@@ -340,6 +380,10 @@ class FloatingWindow(QWidget):
 
     def _settings_closed(self) -> None:
         self._settings_dialog = None
+        self._collapse_timer.start(self._settings.collapse_delay_ms)
+
+    def _search_closed(self) -> None:
+        self._search_dialog = None
         self._collapse_timer.start(self._settings.collapse_delay_ms)
 
     def _apply_settings(self, settings: AppSettings, stocks: list[str], cookie: str) -> None:
@@ -570,6 +614,88 @@ class SettingsDialog(QDialog):
 
     def _clear_check_worker(self) -> None:
         self._check_worker = None
+
+
+class StockSearchDialog(QDialog):
+    stock_selected = Signal(str)
+
+    def __init__(self, parent: QWidget) -> None:
+        super().__init__(parent)
+        self._search_worker: StockSearchWorker | None = None
+        self.setWindowTitle("搜索股票")
+        self.setModal(False)
+        self.resize(380, 360)
+        self._build_ui()
+
+    def _build_ui(self) -> None:
+        root = QVBoxLayout(self)
+        root.setSpacing(10)
+
+        search_row = QHBoxLayout()
+        self._keyword_input = QLineEdit()
+        self._keyword_input.setPlaceholderText("输入股票代码或名称")
+        self._keyword_input.returnPressed.connect(self._search)
+        search_button = QPushButton("搜索")
+        search_button.clicked.connect(self._search)
+        search_row.addWidget(self._keyword_input, 1)
+        search_row.addWidget(search_button)
+        root.addLayout(search_row)
+
+        self._result_list = QListWidget()
+        self._result_list.itemDoubleClicked.connect(lambda _: self._add_selected())
+        root.addWidget(self._result_list, 1)
+
+        self._status_label = QLabel("输入关键词后搜索，双击结果可加入自选。")
+        self._status_label.setObjectName("status")
+        self._status_label.setWordWrap(True)
+        root.addWidget(self._status_label)
+
+        actions = QHBoxLayout()
+        add_button = QPushButton("加入自选")
+        close_button = QPushButton("关闭")
+        add_button.clicked.connect(self._add_selected)
+        close_button.clicked.connect(self.close)
+        actions.addStretch(1)
+        actions.addWidget(add_button)
+        actions.addWidget(close_button)
+        root.addLayout(actions)
+        self.setStyleSheet(_stylesheet())
+
+    def _search(self) -> None:
+        keyword = self._keyword_input.text().strip()
+        if not keyword or (self._search_worker is not None and self._search_worker.isRunning()):
+            return
+        self._status_label.setText("搜索中...")
+        self._result_list.clear()
+        self._search_worker = StockSearchWorker(keyword)
+        self._search_worker.finished.connect(self._handle_results)
+        self._search_worker.finished.connect(self._clear_search_worker)
+        self._search_worker.finished.connect(self._search_worker.deleteLater)
+        self._search_worker.start()
+
+    def _handle_results(self, payload: tuple[list[StockSearchResult], str | None]) -> None:
+        results, error = payload
+        if error:
+            self._status_label.setText(f"搜索失败: {error[:160]}")
+            return
+        for result in results:
+            item_text = f"{result.code}  {result.name}  {result.market}"
+            self._result_list.addItem(item_text)
+            item = self._result_list.item(self._result_list.count() - 1)
+            item.setData(Qt.UserRole, result.code)
+        self._status_label.setText(f"找到 {len(results)} 条结果" if results else "未找到匹配股票")
+
+    def _add_selected(self) -> None:
+        item = self._result_list.currentItem()
+        if item is None:
+            self._status_label.setText("请先选择一个搜索结果")
+            return
+        code = item.data(Qt.UserRole)
+        self.stock_selected.emit(str(code))
+        self._status_label.setText(f"已加入自选: {code}")
+
+    def _clear_search_worker(self) -> None:
+        self._search_worker = None
 
 
 class _QuoteRow(QFrame):
