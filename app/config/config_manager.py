@@ -23,6 +23,7 @@ class AppSettings:
     refresh_interval_seconds: int = 10
     opacity: float = 0.88
     always_on_top: bool = True
+    collapse_delay_ms: int = 700
     collapsed_width: int = 220
     collapsed_height: int = 72
     window: WindowSettings = WindowSettings()
@@ -59,6 +60,7 @@ class ConfigManager:
             refresh_interval_seconds=max(3, int(payload.get("refresh_interval_seconds", 10))),
             opacity=min(1.0, max(0.35, float(payload.get("opacity", 0.88)))),
             always_on_top=bool(payload.get("always_on_top", True)),
+            collapse_delay_ms=min(5000, max(0, int(payload.get("collapse_delay_ms", 700)))),
             collapsed_width=max(160, int(payload.get("collapsed_width", 220))),
             collapsed_height=max(56, int(payload.get("collapsed_height", 72))),
             window=window,
@@ -71,6 +73,7 @@ class ConfigManager:
                 "refresh_interval_seconds": settings.refresh_interval_seconds,
                 "opacity": settings.opacity,
                 "always_on_top": settings.always_on_top,
+                "collapse_delay_ms": settings.collapse_delay_ms,
                 "collapsed_width": settings.collapsed_width,
                 "collapsed_height": settings.collapsed_height,
                 "window": {
@@ -120,6 +123,7 @@ class ConfigManager:
             "refresh_interval_seconds": 10,
             "opacity": 0.88,
             "always_on_top": True,
+            "collapse_delay_ms": 700,
             "collapsed_width": 220,
             "collapsed_height": 72,
             "window": {"x": 80, "y": 80, "width": 460, "height": 320},

@@ -10,7 +10,7 @@ The first MVP is intentionally small:
 - floating translucent always-on-top window
 - system tray show/hide entry
 - hover-to-expand quote card
-- in-app watchlist, opacity, pin, and Cookie settings
+- in-app watchlist, opacity, pin, collapse-delay, and Cookie settings
 - background quote refresh with stale-data fallback
 
 ## Development

@@ -127,7 +127,7 @@ class FloatingWindow(QWidget):
         super().enterEvent(event)
 
     def leaveEvent(self, event) -> None:  # type: ignore[override]
-        self._collapse_timer.start(700)
+        self._collapse_timer.start(self._settings.collapse_delay_ms)
         super().leaveEvent(event)
 
     def mousePressEvent(self, event) -> None:  # type: ignore[override]
@@ -298,7 +298,7 @@ class FloatingWindow(QWidget):
 
     def _settings_closed(self) -> None:
         self._settings_dialog = None
-        self._collapse_timer.start(700)
+        self._collapse_timer.start(self._settings.collapse_delay_ms)
 
     def _apply_settings(self, settings: AppSettings, stocks: list[str], cookie: str) -> None:
         old_top = self._settings.always_on_top
@@ -422,11 +422,18 @@ class SettingsDialog(QDialog):
         self._refresh_spin = QSpinBox()
         self._refresh_spin.setRange(3, 3600)
         self._refresh_spin.setValue(self._settings.refresh_interval_seconds)
+        self._collapse_delay_spin = QSpinBox()
+        self._collapse_delay_spin.setRange(0, 5000)
+        self._collapse_delay_spin.setSingleStep(100)
+        self._collapse_delay_spin.setSuffix(" ms")
+        self._collapse_delay_spin.setValue(self._settings.collapse_delay_ms)
         settings_layout.addWidget(self._top_check, 0, 0, 1, 2)
         settings_layout.addWidget(QLabel("透明度"), 1, 0)
         settings_layout.addWidget(self._opacity_slider, 1, 1)
         settings_layout.addWidget(QLabel("刷新间隔/秒"), 2, 0)
         settings_layout.addWidget(self._refresh_spin, 2, 1)
+        settings_layout.addWidget(QLabel("移出收起延迟"), 3, 0)
+        settings_layout.addWidget(self._collapse_delay_spin, 3, 1)
         root.addWidget(settings_box)
 
         cookie_box = QFrame()
@@ -492,6 +499,7 @@ class SettingsDialog(QDialog):
             refresh_interval_seconds=self._refresh_spin.value(),
             opacity=self._opacity_slider.value() / 100,
             always_on_top=self._top_check.isChecked(),
+            collapse_delay_ms=self._collapse_delay_spin.value(),
         )
         self.settings_saved.emit(settings, stocks, self._cookie_edit.toPlainText().strip())
         self.accept()
