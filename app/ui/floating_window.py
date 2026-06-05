@@ -31,6 +31,18 @@ from app.config.config_manager import AppSettings, ConfigManager, WindowSettings
 from app.services.market_data import MarketDataService, QuoteResult, StockQuote, StockSearchResult
 
 
+QUOTE_COLUMNS = (
+    ("名称", 76, 2),
+    ("代码", 62, 1),
+    ("现价", 64, 1),
+    ("涨跌额", 66, 1),
+    ("涨跌幅", 66, 1),
+    ("换手率", 62, 1),
+    ("成交量", 72, 1),
+    ("成交额", 82, 1),
+)
+
+
 class QuoteWorker(QThread):
     finished = Signal(object)
 
@@ -75,7 +87,7 @@ class StockSearchWorker(QThread):
 
 class FloatingWindow(QWidget):
     RESIZE_MARGIN = 16
-    MIN_EXPANDED_WIDTH = 380
+    MIN_EXPANDED_WIDTH = 700
     MIN_EXPANDED_HEIGHT = 220
 
     def __init__(self, config: ConfigManager, market_data: MarketDataService) -> None:
@@ -294,9 +306,13 @@ class FloatingWindow(QWidget):
 
         column_header = QGridLayout()
         column_header.setHorizontalSpacing(8)
-        for col, text in enumerate(["名称", "代码", "现价", "涨跌额", "涨跌幅"]):
+        column_header.setContentsMargins(10, 0, 10, 0)
+        _apply_quote_column_widths(column_header)
+        for col, (text, _, _) in enumerate(QUOTE_COLUMNS):
             label = QLabel(text)
             label.setObjectName("header")
+            if col >= 2:
+                label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
             column_header.addWidget(label, 0, col)
         panel_layout.addLayout(column_header)
 
@@ -330,7 +346,11 @@ class FloatingWindow(QWidget):
         self._collapsed_panel.setVisible(not expanded)
         self._expanded_panel.setVisible(expanded)
 
-        target_width = self._settings.window.width if expanded else self._settings.collapsed_width
+        target_width = (
+            max(self.MIN_EXPANDED_WIDTH, self._settings.window.width)
+            if expanded
+            else self._settings.collapsed_width
+        )
         target_height = self._settings.window.height if expanded else self._settings.collapsed_height
         target = self.geometry()
         target.setWidth(target_width)
@@ -705,6 +725,7 @@ class _QuoteRow(QFrame):
         layout = QGridLayout(self)
         layout.setContentsMargins(10, 7, 10, 7)
         layout.setHorizontalSpacing(8)
+        _apply_quote_column_widths(layout)
 
         values = [
             quote.name,
@@ -712,14 +733,26 @@ class _QuoteRow(QFrame):
             _fmt_price(quote.price),
             _fmt_amount(quote.change_amount),
             _fmt_percent(quote.change_percent),
+            _fmt_unsigned_percent(quote.turnover_rate),
+            _fmt_compact_number(quote.volume),
+            _fmt_compact_number(quote.turnover_amount),
         ]
         for col, value in enumerate(values):
             label = QLabel(value)
             label.setSizePolicy(QSizePolicy.Expanding, QSizePolicy.Preferred)
-            if col >= 2:
+            if col in (2, 3, 4):
                 label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
                 label.setStyleSheet(f"color: {_quote_color(quote.change_percent).name()};")
+            elif col >= 5:
+                label.setAlignment(Qt.AlignRight | Qt.AlignVCenter)
+                label.setObjectName("muted")
             layout.addWidget(label, 0, col)
+
+
+def _apply_quote_column_widths(layout: QGridLayout) -> None:
+    for col, (_, minimum_width, stretch) in enumerate(QUOTE_COLUMNS):
+        layout.setColumnMinimumWidth(col, minimum_width)
+        layout.setColumnStretch(col, stretch)
 
 
 def _tool_button(tooltip: str, text: str, callback) -> QToolButton:
@@ -755,6 +788,23 @@ def _fmt_percent(value: float | None) -> str:
     if value is None:
         return "--"
     return f"{value:+.2f}%"
+
+
+def _fmt_unsigned_percent(value: float | None) -> str:
+    if value is None:
+        return "--"
+    return f"{value:.2f}%"
+
+
+def _fmt_compact_number(value: float | None) -> str:
+    if value is None:
+        return "--"
+    abs_value = abs(value)
+    if abs_value >= 100000000:
+        return f"{value / 100000000:.2f}亿"
+    if abs_value >= 10000:
+        return f"{value / 10000:.2f}万"
+    return f"{value:.0f}"
 
 
 def _quote_color(change_percent: float | None) -> QColor:

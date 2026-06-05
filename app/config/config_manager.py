@@ -14,7 +14,7 @@ DEFAULT_STOCKS = ["000001", "600519", "300750"]
 class WindowSettings:
     x: int = 80
     y: int = 80
-    width: int = 460
+    width: int = 720
     height: int = 320
 
 
@@ -53,7 +53,7 @@ class ConfigManager:
         window = WindowSettings(
             x=int(window_payload.get("x", 80)),
             y=int(window_payload.get("y", 80)),
-            width=int(window_payload.get("width", 460)),
+            width=int(window_payload.get("width", 720)),
             height=int(window_payload.get("height", 320)),
         )
         return AppSettings(
@@ -126,7 +126,7 @@ class ConfigManager:
             "collapse_delay_ms": 700,
             "collapsed_width": 220,
             "collapsed_height": 72,
-            "window": {"x": 80, "y": 80, "width": 460, "height": 320},
+            "window": {"x": 80, "y": 80, "width": 720, "height": 320},
         }
 
     @staticmethod

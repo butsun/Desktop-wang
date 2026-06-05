@@ -15,7 +15,7 @@ EASTMONEY_HOSTS = [
     "28.push2.eastmoney.com",
 ]
 
-EASTMONEY_FIELDS = "f12,f13,f14,f2,f3,f4"
+EASTMONEY_FIELDS = "f12,f13,f14,f2,f3,f4,f8,f5,f6"
 
 
 @dataclass(frozen=True)
@@ -25,6 +25,9 @@ class StockQuote:
     price: float | None
     change_amount: float | None
     change_percent: float | None
+    turnover_rate: float | None
+    volume: float | None
+    turnover_amount: float | None
 
 
 @dataclass(frozen=True)
@@ -189,6 +192,9 @@ def _extract_eastmoney_quotes(rows: list[dict[str, Any]], symbols: list[str]) ->
                     price=None,
                     change_amount=None,
                     change_percent=None,
+                    turnover_rate=None,
+                    volume=None,
+                    turnover_amount=None,
                 )
             )
             continue
@@ -199,6 +205,9 @@ def _extract_eastmoney_quotes(rows: list[dict[str, Any]], symbols: list[str]) ->
                 price=_as_float(row.get("f2")),
                 change_amount=_as_float(row.get("f4")),
                 change_percent=_as_float(row.get("f3")),
+                turnover_rate=_as_float(row.get("f8")),
+                volume=_as_float(row.get("f5")),
+                turnover_amount=_as_float(row.get("f6")),
             )
         )
     return quotes
@@ -241,6 +250,9 @@ def _mock_quotes(symbols: list[str]) -> list[StockQuote]:
                 price=price,
                 change_amount=amount,
                 change_percent=percent,
+                turnover_rate=1.88 if price is not None else None,
+                volume=128900.0 if price is not None else None,
+                turnover_amount=13046680.0 if price is not None else None,
             )
         )
     return quotes
